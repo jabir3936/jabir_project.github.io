@@ -1,0 +1,143 @@
+---
+title: "01 Intro to the tidyverse"
+author: "Jabir Mohamed Abdi"
+date: "2021-04"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    collapsed: false
+    number_sections: true
+    toc_depth: 3
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
+```
+
+Last compiled: `r Sys.Date()`
+# Introduction to tidyverse challenges
+
+
+
+
+## Loading the libraries and importing
+The first step before analysing the data will be importing the necessary libraries.
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+
+# 2.0 Importing Files ----
+bikes_tbl <- read_excel(path = "ds_data/01_bike_sales/01_raw_data/bikes.xlsx")
+orderlines_tbl <- read_excel("ds_data/01_bike_sales/01_raw_data/orderlines.xlsx")
+bikeshops_tbl  <- read_excel("ds_data/01_bike_sales/01_raw_data/bikeshops.xlsx")
+
+```
+
+
+After that we will then examine and join the data, in this case we will be joining the (product.id) with the (bike.id )
+
+
+```{r}
+# Joining Data ----
+
+
+left_join(orderlines_tbl, bikes_tbl, by = c("product.id" = "bike.id"))
+
+#Chaining commands with the pipe and assigning it to order_items_joined_tbl
+
+bike_orderlines_joined_tbl <- orderlines_tbl %>%
+  left_join(bikes_tbl, by = c("product.id" = "bike.id")) %>%
+  left_join(bikeshops_tbl, by = c("customer.id" = "bikeshop.id"))
+
+```
+## Wrangling data
+
+This section now involves the cleaning of the data and manipulating the data towards
+what we are intersted in. In our case, that is the revenues based on the state and city.
+Another column in the new table bike_orderlines_wrangled_tbl will be added this will be the total price from the price and quantity of the bikes
+```{r}
+#  Separate category name to city and state
+bike_orderlines_wrangled_tbl <- bike_orderlines_joined_tbl %>% separate (col = location, into = c("City","State"), sep = (",")) %>%
+mutate(total.price = price * quantity) %>%
+select(-ends_with(".id")) %>%
+bind_cols(bike_orderlines_joined_tbl %>% select(order.id)) %>%
+select(order.id, contains("order"), contains("model"), contains("category"),
+         price, quantity, total.price,
+         everything()) %>%
+  # 5.4 Rename columns because we actually wanted underscores instead of the dots
+  # (one at the time vs. multiple at once)
+  rename(bikeshop = name) %>%
+  set_names(names(.) %>% str_replace_all("\\.", "_"))
+```
+
+
+# Business insight section(Challenges)
+
+## Analyze the sales by location (state) 
+Now onto the 1st challenge for analysing total revenue of bikes by each state. The first code chunk calculates the total revenue of each state.
+```{r}
+# This code chunk shows how the total revenue calculated for each state. 
+sales_by_state_tbl <- bike_orderlines_wrangled_tbl %>% select(State,total_price) %>% group_by(State) %>% 
+  summarise(total_sales= sum(total_price))%>% 
+  ungroup() %>% 
+  mutate(sales_text = scales::dollar(total_sales, big.mark = ".",decimal.mark = ",", prefix = "",suffix = " €"))
+```
+
+The second code chunk now involves displaying the bar plot of all the revenue for each state.
+
+```{r plot, fig.width=14, fig.height=14}
+sales_by_state_tbl %>% ggplot(aes(x = State, y = total_sales)) + geom_col(fill = "#2DC6D6") +geom_label(aes(label = sales_text)) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".",  decimal.mark = ",",prefix = "", suffix = " €")) +
+  labs(  title    = "Revenue by State",  y = "Revenue" ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Analyse the sales by location(state) and year
+
+For the second section of this challenge the total revenue will be analysed based on the state and the date of order. The date of order will be modified to displaay total revenue in each year for each state.
+
+```{r}
+# We have to group the data based on the location and the year which is the order dates
+
+sales_by_styr_tbl <- bike_orderlines_wrangled_tbl %>% 
+  select(State,order_date,total_price) %>%
+#Include another column for year that is the year when it was ordered
+  mutate(year= year(order_date)) %>%
+#Order the data by year and state and include the total sum of bikes.
+  group_by(year,State)%>% 
+  summarise(sales= sum(total_price)) %>%
+  
+  mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                     decimal.mark = ",", 
+                                     prefix = "", 
+                                     suffix = " €"))
+
+```
+
+
+After manipulation of the data we can now display the 12 plots of revenue representing each state and their respective years.
+
+```{r , fig.width=20, fig.height=20}
+ #Now to visualize each graph
+  
+  sales_by_styr_tbl %>%
+    ggplot(aes(x = year, y = sales, fill = State)) +
+    geom_col() +
+    facet_wrap(~ State) +
+    
+    scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                      decimal.mark = ",", 
+                                                      prefix = "", 
+                                                      suffix = " €")) +
+labs(
+      title = "Revenue by Year and State",
+      fill = "Main category" # Changes the legend name)
+      )
+```
+
+From the 12 plots we can see that Norht Rhine-Westphalia had the highest revenue for all years while Saxony,Saxony-Anhalt, and Mechlenburg-Western Pomerania has shown the  least amount sof revenues for all years.
